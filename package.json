@@ -5,10 +5,10 @@
     "main": "index.ts",
     "type": "module",
     "scripts": {
-        "start": "tsx discord_server.ts",
-        "driver": "tsx discord_server.ts",
-        "dev": "tsx watch discord_server.ts",
-        "mcp-client": "tsx mcp_client.ts"
+        "start": "tsx src/discord_server.ts",
+        "driver": "tsx src/discord_server.ts",
+        "dev": "tsx watch src/discord_server.ts",
+        "mcp-client": "tsx src/mcp_client.ts"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.71.2",
