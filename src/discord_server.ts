@@ -7,7 +7,9 @@ import { setupTicketHandlers } from "./concierge/tickets.js";
 import { setupSecretVoiceHandler } from "./concierge/secret_voice_chat.js";
 import { getUserContext, saveUserContext } from "./db.js";
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+import { CONFIG } from "./config.js";
+
+const DISCORD_TOKEN = CONFIG.DISCORD.TOKEN;
 
 // Initialize Discord Client
 export const discordClient = new Client({

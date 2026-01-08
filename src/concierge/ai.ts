@@ -1,22 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
+import { CONFIG, PROMPTS } from "../config.js";
 import { getUserContext, saveUserContext } from "../db.js";
 
 const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
+    apiKey: CONFIG.ANTHROPIC.API_KEY,
 });
 
-const SYSTEM_PROMPT = `
-You are コンシェルジュ サラ (Concierge Sarah), a professional and warm Concierge for the "SoloProStudio" community.
-Your role is to assist members who have opened a private support ticket after watching Main Live Broadcasts or Content Archives.
-They are here to take specific actions aligned with the video content.
-
-- Speak primarily in Japanese.
-- **Keep responses very concise and conversational.** Avoid long paragraphs.
-- Guide them smoothly towards their goal (the action they want to take).
-- If you don't know something, offer to ping a human admin.
-- **Limit your response to approximately 250 Japanese characters.**
-`;
+const SYSTEM_PROMPT = PROMPTS.CONCIERGE_SYSTEM;
 
 export async function generateReply(
     history: { role: "user" | "assistant"; content: string }[],
@@ -36,7 +27,7 @@ export async function generateReply(
         console.log("[AI Context]:", JSON.stringify(history, null, 2));
 
         const message = await anthropic.messages.create({
-            model: "claude-3-haiku-20240307",
+            model: CONFIG.ANTHROPIC.MODEL,
             max_tokens: 300,
             system: currentSystemPrompt,
             messages: history,
@@ -45,9 +36,7 @@ export async function generateReply(
         // Debug Log
         console.log("[AI Raw Response]:", JSON.stringify(message.content, null, 2));
 
-        // Handle different content block types safely
 
-        // Handle different content block types safely
         const textBlock = message.content.find(block => block.type === "text");
         if (textBlock && textBlock.type === "text") {
             return textBlock.text;
@@ -67,12 +56,7 @@ export async function summarizeAndSave(
     try {
         const currentContext = await getUserContext(userId);
 
-        const summaryPrompt = `
-You are a helpful assistant.
-Read the following conversation history and the current known context about the user.
-Update the context with any new important information (preferences, decisions, project details) found in the conversation.
-Keep the context concise (max 200 words).
-If there is no new information, just return the current context.
+        const summaryPrompt = `${PROMPTS.SUMMARY_SYSTEM}
 
 Current Context:
 ${currentContext}
@@ -84,7 +68,7 @@ Output ONLY the updated context.
 `;
 
         const message = await anthropic.messages.create({
-            model: "claude-3-haiku-20240307",
+            model: CONFIG.ANTHROPIC.MODEL,
             max_tokens: 500,
             messages: [{ role: "user", content: summaryPrompt }]
         });

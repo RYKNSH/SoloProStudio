@@ -6,8 +6,10 @@ import {
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleTicketInteraction } from '../concierge/tickets.js';
 
+import { CONFIG } from "../config.js";
+
 // Environment variables
-const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
+const PUBLIC_KEY = CONFIG.DISCORD.PUBLIC_KEY;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 1. Verify Request Signature

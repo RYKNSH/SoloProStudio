@@ -61,7 +61,10 @@ export function setupTicketHandlers(client: Client) {
 
         // Webhook sending logic
         try {
-            const webhooks = await channel.parent?.fetchWebhooks() || await (channel as any).parent?.fetchWebhooks();
+            const parent = channel.parent;
+            if (!parent) return;
+
+            const webhooks = await parent.fetchWebhooks();
             let webhook = webhooks?.find(w => w.name === "コンシェルジュ サラ");
 
             if (!webhook && channel.parent) {
