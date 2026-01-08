@@ -8,10 +8,8 @@ client.on("ready", async () => {
     const guild = client.guilds.cache.first();
     if (!guild) return;
 
-    // Find the Ticket Reservation channel (formerly "Ticket Reservation" or similar)
-    // Based on inspection, channel is "🎟️-チケット予約" (ID: 1457033381098295348)
-    const channelId = "1457033381098295348";
-    const channel = await guild.channels.fetch(channelId);
+    // Find the Ticket Reservation channel by fuzzy name match
+    const channel = guild.channels.cache.find(c => c.name.includes("チケット予約"));
 
     if (channel?.isTextBased()) {
         const embed = new EmbedBuilder()

@@ -186,19 +186,46 @@ export async function startDiscordClient() {
   if (!DISCORD_TOKEN) throw new Error("Missing DISCORD_TOKEN");
 
   // Check if already ready to avoid re-login issues in HMR/Serverless
-  if (discordClient.isReady()) return;
+  if (discordClient.isReady()) {
+    console.log("Discord Client is already ready.");
+    return;
+  }
 
+  console.log("Setting up Ticket Handlers...");
   setupTicketHandlers(discordClient);
+  console.log("Setting up Secret Voice Handler...");
   setupSecretVoiceHandler(discordClient);
-  await discordClient.login(DISCORD_TOKEN);
+
+  console.log("Attempting to login to Discord...");
+  try {
+    await discordClient.login(DISCORD_TOKEN);
+    console.log("Login call completed.");
+  } catch (error) {
+    console.error("CRITICAL: Login Failed:", error);
+    throw error;
+  }
 
   discordClient.once("ready", async () => {
-    console.log(`Logged in as ${discordClient.user?.tag}`);
+    console.log(`Logged in as ${discordClient.user?.tag} (${discordClient.user?.id})`);
+    console.log(`Guilds: ${discordClient.guilds.cache.size}`);
+  });
+
+  discordClient.on("error", (error) => {
+    console.error("Discord Client Error:", error);
   });
 }
 
 // CLI Execution Support
-if (import.meta.url === `file://${process.argv[1]}`) {
+import { fileURLToPath } from "url";
+
+// Debugging Entry Point
+const currentFilePath = fileURLToPath(import.meta.url);
+console.log("Debug: Checking Entry Point");
+console.log("Debug: import.meta.url -> path =", currentFilePath);
+console.log("Debug: process.argv[1]       =", process.argv[1]);
+
+if (process.argv[1] === currentFilePath) {
+  console.log("Debug: Entry point match! Starting server...");
   const server = new McpServer({
     name: "discord-driver",
     version: "1.0.0"
@@ -206,9 +233,15 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
   installDiscordTools(server);
 
+  console.log("Starting Discord Client process...");
   startDiscordClient().then(async () => {
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("MCP Server connected to stdio");
-  }).catch(console.error);
+  }).catch((e) => {
+    console.error("Fatal Error during startup:", e);
+    process.exit(1);
+  });
+} else {
+  console.log("Debug: Entry point Mismatch. Not starting automatically.");
 }

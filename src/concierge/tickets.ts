@@ -21,15 +21,8 @@ export function setupTicketHandlers(client: Client) {
                 await handleCreateTicket(interaction, client);
             } else if (interaction.customId === "close_ticket") {
                 await handleCloseTicket(interaction);
-            } else if (interaction.customId === "start_voice") {
-                // Now handled by secret_voice_chat.ts listener, but we can keep it here OR remove it.
-                // Best to keep tickets logic together if possible, or delegate.
-                // Since we added a global listener in secret_voice_chat.ts, this might duplicate?
-                // No, secret_voice_chat.ts has its own listener.
-                // Standard practice: Have one central router or separate listeners.
-                // I will Comment out here to avoid double-handling if separate listener is active.
-                await createSecretVoiceChannel(interaction, client);
             }
+            // NOTE: "start_voice" is handled EXCLUSIVELY by secret_voice_chat.ts
         } catch (error) {
             console.error("Interaction Error:", error);
             try {
@@ -43,7 +36,7 @@ export function setupTicketHandlers(client: Client) {
 
         const channel = message.channel;
         if (!channel.isThread()) return;
-        if (!channel.name.startsWith("ticket-")) return;
+        if (!channel.name.startsWith("チケット-")) return;
 
         console.log(`Processing Ticket Message: ${message.content}`);
         await channel.sendTyping();
@@ -101,7 +94,7 @@ async function handleCreateTicket(interaction: ButtonInteraction, client: Client
     await interaction.deferReply({ ephemeral: true });
 
     const user = interaction.user;
-    const threadName = `ticket-${user.username}`;
+    const threadName = `チケット-${user.displayName || user.username}`;
 
     const ticketThread = await channel.threads.create({
         name: threadName,
@@ -172,8 +165,7 @@ async function handleCloseTicket(interaction: ButtonInteraction) {
         }
 
         setTimeout(async () => {
-            await channel.setLocked(true);
-            await channel.setArchived(true);
+            await channel.delete();
         }, 1000);
     } else {
         await interaction.reply({ content: "スレッド以外では実行できません。", ephemeral: true });

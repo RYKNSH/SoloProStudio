@@ -4,7 +4,7 @@ import {
     verifyKey
 } from 'discord-interactions';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleTicketInteraction } from '../concierge/tickets.js';
+// import { handleTicketInteraction } from '../concierge/tickets.js'; // Disabled: Gateway Only Mode
 
 import { CONFIG } from "../config.js";
 
@@ -37,25 +37,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Application Commands or Message Components (Buttons, etc.)
     if (interaction.type === InteractionType.APPLICATION_COMMAND || interaction.type === InteractionType.MESSAGE_COMPONENT) {
-        try {
-            // Processing Ticket/Concierge interactions
-            // We pass the RAW interaction object to the handler.
-            // The handler must return a JSON response compatible with Discord Webhooks.
-            const response = await handleTicketInteraction(interaction);
-            if (response) {
-                return res.status(200).json(response);
+        // Return ephemeral error message instructing to switch to Gateway
+        return res.status(200).json({
+            type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+            data: {
+                content: '⚠️ **Configuration Error**\nThis bot is running in Gateway mode. Please remove the **Interactions Endpoint URL** in the Discord Developer Portal to enable buttons and commands.',
+                flags: 64 // Ephemeral
             }
-        } catch (error) {
-            console.error('Interaction Handling Error:', error);
-            // Return ephemeral error message
-            return res.status(200).json({
-                type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-                data: {
-                    content: 'エラーが発生しました。',
-                    flags: 64 // Ephemeral
-                }
-            });
-        }
+        });
     }
 
     return res.status(400).send('Unknown Interaction Type');
