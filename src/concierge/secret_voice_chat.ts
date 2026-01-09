@@ -46,6 +46,8 @@ export class RealtimeVoiceSession {
     private speakerProcess: any | null = null;
     private activeStreamCount = 0;
     private activeUserStreams = new Set<string>(); // 重複ストリーム防止
+    private inactivityTimer: NodeJS.Timeout | null = null; // 無発話タイムアウト
+    private static readonly INACTIVITY_TIMEOUT_MS = 60000; // 1分
 
     constructor(channel: VoiceChannel) {
         console.log(`[SecretVoice] Initializing Session for: ${channel.name} (${channel.id})`);
@@ -76,6 +78,7 @@ export class RealtimeVoiceSession {
         this.setupOpenAI();
         this.setupDiscord();
         this.setupSpeakerPipeline();
+        this.startInactivityTimer(); // 無発話タイマー開始
     }
 
     private setupSpeakerPipeline() {
@@ -255,6 +258,7 @@ export class RealtimeVoiceSession {
                 return;
             }
             this.activeUserStreams.add(userId);
+            this.resetInactivityTimer(); // 発話があったのでタイマーリセット
             console.log(`[SecretVoice] 🎤 User ${userId} started speaking`);
 
             // Subscribe to raw Opus stream
@@ -360,8 +364,39 @@ export class RealtimeVoiceSession {
         this.cleanup();
     }
 
+    // 無発話タイマー開始
+    private startInactivityTimer() {
+        this.inactivityTimer = setTimeout(async () => {
+            console.log(`[SecretVoice] ⏰ 1分間発話がないためチャンネルを削除します: ${this.channel.name}`);
+            await this.deleteChannelAndCleanup();
+        }, RealtimeVoiceSession.INACTIVITY_TIMEOUT_MS);
+    }
+
+    // 発話があった場合にタイマーをリセット
+    private resetInactivityTimer() {
+        if (this.inactivityTimer) {
+            clearTimeout(this.inactivityTimer);
+        }
+        this.startInactivityTimer();
+    }
+
+    // チャンネル削除とクリーンアップ
+    private async deleteChannelAndCleanup() {
+        try {
+            this.cleanup();
+            await this.channel.delete();
+            console.log(`[SecretVoice] 🗑️ チャンネル削除完了: ${this.channel.name}`);
+        } catch (e) {
+            console.error("[SecretVoice] チャンネル削除エラー:", e);
+        }
+    }
+
     private cleanup() {
         try {
+            if (this.inactivityTimer) {
+                clearTimeout(this.inactivityTimer);
+                this.inactivityTimer = null;
+            }
             this.ws.close();
             this.speakerProcess?.kill();
             this.connection.destroy();
