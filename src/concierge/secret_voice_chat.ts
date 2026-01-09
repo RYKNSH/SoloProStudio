@@ -18,7 +18,7 @@ import ffmpegPath from "ffmpeg-static";
 import { spawn } from "child_process";
 
 // OpenAI Realtime Configuration
-const MODEL = "gpt-4o-realtime-preview-2024-10-01";
+const MODEL = "gpt-4o-realtime-preview-2024-12-17";
 const URL = `wss://api.openai.com/v1/realtime?model=${MODEL}`;
 
 // Helper: Calculate RMS (Root Mean Square) for volume detection
@@ -45,6 +45,7 @@ export class RealtimeVoiceSession {
     private speakerStream: Transform | null = null;
     private speakerProcess: any | null = null;
     private activeStreamCount = 0;
+    private activeUserStreams = new Set<string>(); // 重複ストリーム防止
 
     constructor(channel: VoiceChannel) {
         console.log(`[SecretVoice] Initializing Session for: ${channel.name} (${channel.id})`);
@@ -171,9 +172,8 @@ export class RealtimeVoiceSession {
                         break;
 
                     case "input_audio_buffer.speech_stopped":
-                        console.log("[SecretVoice] 🎤 OpenAI detected speech STOP - Triggering response...");
-                        // KEY FIX: Explicitly request a response after speech stops
-                        this.ws.send(JSON.stringify({ type: "response.create" }));
+                        console.log("[SecretVoice] 🎤 OpenAI detected speech STOP");
+                        // サーバーVADが自動的にレスポンスを生成するので、手動リクエストは不要
                         break;
 
                     case "response.audio.delta":
@@ -189,7 +189,7 @@ export class RealtimeVoiceSession {
                         break;
 
                     case "response.done":
-                        console.log("[SecretVoice] ✅ Response cycle complete");
+                        console.log("[SecretVoice] ✅ Response cycle complete:", JSON.stringify(event, null, 2));
                         break;
 
                     case "error":
@@ -228,14 +228,18 @@ export class RealtimeVoiceSession {
 
         // Listen to speaking events
         receiver.speaking.on("start", (userId) => {
-            console.log(`[SecretVoice] 🎤 Speaking Event: User ${userId} started speaking`);
-            this.activeStreamCount++;
+            // 既にこのユーザーのストリームが処理中なら無視
+            if (this.activeUserStreams.has(userId)) {
+                return;
+            }
+            this.activeUserStreams.add(userId);
+            console.log(`[SecretVoice] 🎤 User ${userId} started speaking`);
 
             // Subscribe to raw Opus stream
             const opusStream = receiver.subscribe(userId, {
                 end: {
                     behavior: EndBehaviorType.AfterSilence,
-                    duration: 1500, // Increased for better detection
+                    duration: 300, // 短くしてレスポンスを高速化
                 },
             });
 
@@ -247,9 +251,6 @@ export class RealtimeVoiceSession {
             // 1. Opus Decoding -> 48kHz PCM (Stereo for compatibility)
             const decoder = new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 });
 
-            // Buffer to collect ALL audio chunks
-            const pcmBuffers: Buffer[] = [];
-
             // Handle decoder errors
             decoder.on("error", (err) => {
                 console.error(`[SecretVoice] Decoder Error:`, err.message);
@@ -257,58 +258,41 @@ export class RealtimeVoiceSession {
 
             opusStream.pipe(decoder);
 
-            // Collect audio data (convert to 24kHz mono inline, no FFmpeg)
+            // リアルタイムストリーミング: 音声を即座にOpenAIに送信
             decoder.on("data", (pcmChunk: Buffer) => {
+                if (!this.isOpen) return;
+
                 try {
                     // Convert 48kHz stereo to 24kHz mono inline
                     const mono24k = this.convertTo24kMono(pcmChunk);
                     if (mono24k.length > 0) {
-                        pcmBuffers.push(mono24k);
-                    }
-                } catch (error) {
-                    console.error("[SecretVoice] Audio conversion failed:", error);
-                }
-            });
-
-            // KEY FIX: When speech ends, batch send all audio
-            decoder.on("end", () => {
-                console.log(`[SecretVoice] 🎤 Speech ended for user ${userId}`);
-                this.activeStreamCount--;
-
-                if (pcmBuffers.length > 0 && this.isOpen) {
-                    // Combine all audio chunks
-                    const totalLength = pcmBuffers.reduce((sum, buf) => sum + buf.length, 0);
-                    const combinedPcm = Buffer.allocUnsafe(totalLength);
-                    let offset = 0;
-                    for (const buffer of pcmBuffers) {
-                        combinedPcm.set(new Uint8Array(buffer), offset);
-                        offset += buffer.length;
-                    }
-
-                    console.log(`[SecretVoice] 📤 Sending ${Math.round(combinedPcm.length / 1000)}KB audio to OpenAI`);
-
-                    try {
-                        // Send audio as base64
-                        const base64Audio = combinedPcm.toString("base64");
+                        const base64Audio = mono24k.toString("base64");
                         this.ws.send(JSON.stringify({
                             type: "input_audio_buffer.append",
                             audio: base64Audio
                         }));
+                    }
+                } catch (error) {
+                    // 送信エラーは無視（接続切れなど）
+                }
+            });
 
-                        // KEY FIX: Commit the audio buffer
-                        this.ws.send(JSON.stringify({
-                            type: "input_audio_buffer.commit"
-                        }));
+            // ストリーム終了時: コミット＆レスポンス要求
+            decoder.on("end", () => {
+                console.log(`[SecretVoice] 🎤 User ${userId} stopped speaking`);
+                this.activeUserStreams.delete(userId);
+
+                if (this.isOpen) {
+                    try {
+                        // 音声バッファをコミット
+                        this.ws.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
                         console.log("[SecretVoice] ✅ Audio buffer committed");
 
-                        // KEY FIX: Explicitly request a response
-                        this.ws.send(JSON.stringify({
-                            type: "response.create"
-                        }));
+                        // レスポンスを要求
+                        this.ws.send(JSON.stringify({ type: "response.create" }));
                         console.log("[SecretVoice] 🚀 Response requested");
-
                     } catch (error) {
-                        console.error("[SecretVoice] Failed to send audio to OpenAI:", error);
+                        console.error("[SecretVoice] Failed to commit/request:", error);
                     }
                 }
             });
@@ -388,7 +372,7 @@ export async function createSecretVoiceChannel(interaction: ButtonInteraction, c
     }
 
     const user = interaction.user;
-    const channelName = `secret-voice-${user.username}`;
+    const channelName = `🔒 秘密通話 - ${user.displayName || user.username}`;
 
     // Category Logic (simplified)
     let parentCategoryId: string | undefined;
@@ -451,7 +435,7 @@ export function setupSecretVoiceHandler(client: Client) {
         const leftChannel = oldState.channel;
         if (!leftChannel) return;
         if (leftChannel.type !== ChannelType.GuildVoice) return;
-        if (!leftChannel.name.startsWith("secret-voice-")) return;
+        if (!leftChannel.name.startsWith("🔒 秘密通話")) return;
 
         // Get member count (exclude bots)
         const humanMembers = leftChannel.members.filter(m => !m.user.bot);

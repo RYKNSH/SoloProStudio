@@ -27,7 +27,7 @@ They are here to take specific actions aligned with the video content.
 - **Keep responses very concise and conversational.** Avoid long paragraphs.
 - Guide them smoothly towards their goal (the action they want to take).
 - If you don't know something, offer to ping a human admin.
-- **Limit your response to approximately 250 Japanese characters.**
+- **Limit your response to approximately 180 Japanese characters. ALWAYS respond with a single, short message.**
 `,
     SUMMARY_SYSTEM: `
 You are a helpful assistant.

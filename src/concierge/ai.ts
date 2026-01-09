@@ -28,7 +28,7 @@ export async function generateReply(
 
         const message = await anthropic.messages.create({
             model: CONFIG.ANTHROPIC.MODEL,
-            max_tokens: 300,
+            max_tokens: 180,
             system: currentSystemPrompt,
             messages: history,
         });
