@@ -13,7 +13,7 @@ import { WebSocket } from "ws";
 import { VoiceChannel, InternalDiscordGatewayAdapterCreator, ButtonInteraction, Client, ChannelType, PermissionFlagsBits } from "discord.js";
 import prism from "prism-media";
 import "dotenv/config";
-import { Transform } from "stream";
+import { Transform, PassThrough } from "stream";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "child_process";
 
@@ -93,12 +93,22 @@ export class RealtimeVoiceSession {
             "-i", "pipe:0",   // Input from Node.js Stream
             "-f", "s16le",
             "-ar", "48000",
-            "-ac", "2",       // Discord expects Stereo (usually better for compatibility)
+            "-ac", "2",       // Discord expects Stereo
             "pipe:1"          // Output to Discord AudioPlayer
         ]);
 
-        // Handle FFmpeg Output -> Discord Audio Player
-        const resource = createAudioResource(this.speakerProcess.stdout, {
+        // PassThroughストリームを作成してFFmpegの出力を流す
+        let currentPassThrough = new PassThrough();
+
+        // FFmpegの出力をPassThroughに流す
+        this.speakerProcess.stdout.on("data", (chunk: Buffer) => {
+            if (!currentPassThrough.destroyed) {
+                currentPassThrough.write(chunk);
+            }
+        });
+
+        // 初回のAudioResourceを作成
+        const resource = createAudioResource(currentPassThrough, {
             inputType: StreamType.Raw
         });
         this.player.play(resource);
@@ -123,6 +133,18 @@ export class RealtimeVoiceSession {
 
         this.player.on("stateChange", (oldState, newState) => {
             console.log(`[SecretVoice] AudioPlayer State: ${oldState.status} -> ${newState.status}`);
+
+            // AudioPlayerがidleになったら、新しいPassThroughで再生を再開
+            if (newState.status === AudioPlayerStatus.Idle) {
+                // 古いPassThroughを閉じて新しいものを作成
+                currentPassThrough = new PassThrough();
+
+                const newResource = createAudioResource(currentPassThrough, {
+                    inputType: StreamType.Raw
+                });
+                this.player.play(newResource);
+                console.log("[SecretVoice] 🔄 AudioPlayer restarted with new PassThrough");
+            }
         });
     }
 
