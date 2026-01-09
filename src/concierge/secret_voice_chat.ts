@@ -261,13 +261,15 @@ export class RealtimeVoiceSession {
             const opusStream = receiver.subscribe(userId, {
                 end: {
                     behavior: EndBehaviorType.AfterSilence,
-                    duration: 300, // 短くしてレスポンスを高速化
+                    duration: 500, // 安定した発話終了検出
                 },
             });
 
             // CRITICAL: Handle DAVE decryption errors to prevent crash
             opusStream.on("error", (err) => {
                 console.error(`[SecretVoice] OpusStream Error (DAVE?):`, err.message);
+                // エラー時もストリームをクリアして次の発話を許可
+                this.activeUserStreams.delete(userId);
             });
 
             // 1. Opus Decoding -> 48kHz PCM (Stereo for compatibility)
